@@ -1,0 +1,33 @@
+name: music_app
+description: Spotify-like music app
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  just_audio: ^0.9.38
+  just_audio_background: ^0.0.1-beta.11
+  palette_generator: ^0.3.3+3
+  shared_preferences: ^2.2.3
+  video_player: ^2.8.7
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_launcher_icons: ^0.14.1
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon.png"
+  adaptive_icon_background: "#080605"
+  adaptive_icon_foreground: "assets/icon_fg.png"
+
+flutter:
+  uses-material-design: true
