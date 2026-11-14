@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 
@@ -41,3 +42,20 @@ extra = """
 """
 s = s.replace("</application>", extra + "    </application>", 1)
 open(p, "w", encoding="utf-8").write(s)
+
+# Android lint release build me crash kar raha tha (LintDriver error), isliye lint band
+app_dir = os.path.dirname(os.path.dirname(os.path.dirname(p)))
+for name in ("build.gradle.kts", "build.gradle"):
+    g = os.path.join(app_dir, name)
+    if os.path.exists(g):
+        t = open(g, encoding="utf-8").read()
+        if "checkReleaseBuilds" not in t:
+            t = re.sub(
+                r"^android\s*\{",
+                "android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }\n",
+                t, count=1, flags=re.M)
+            open(g, "w", encoding="utf-8").write(t)
+        print("patched gradle:", g)
+        break
+else:
+    print("WARNING: build.gradle not found in", app_dir)
