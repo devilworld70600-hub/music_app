@@ -80,3 +80,24 @@ if fonts:
     print("fonts added:", fonts)
 else:
     print("no Inter fonts found, default font use hoga")
+
+# Notification ka chhota icon: adaptive launcher icon ki jagah simple white music note
+res = os.path.join(app_dir, "src", "main", "res")
+os.makedirs(os.path.join(res, "drawable"), exist_ok=True)
+open(os.path.join(res, "drawable", "ic_stat_music.xml"), "w", encoding="utf-8").write(
+    '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
+    '    android:width="24dp" android:height="24dp"\n'
+    '    android:viewportWidth="24" android:viewportHeight="24">\n'
+    '    <path android:fillColor="#FFFFFFFF"\n'
+    '        android:pathData="M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z"/>\n'
+    '</vector>\n')
+# resource shrinker is icon ko hata na de (wo sirf naam se load hota hai)
+os.makedirs(os.path.join(res, "raw"), exist_ok=True)
+open(os.path.join(res, "raw", "keep.xml"), "w", encoding="utf-8").write(
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<resources xmlns:tools="http://schemas.android.com/tools"\n'
+    '    tools:keep="@drawable/ic_stat_music,@mipmap/ic_launcher" />\n')
+
+# debugging: final manifest build log me dikhao
+print("=== FINAL MANIFEST ===")
+print(open(p, encoding="utf-8").read())

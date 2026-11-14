@@ -10,6 +10,7 @@ Future<void> main() async {
     androidNotificationChannelId: 'com.example.music_app.audio',
     androidNotificationChannelName: 'Music playback',
     androidNotificationOngoing: true,
+    androidNotificationIcon: 'drawable/ic_stat_music',
   );
   Library.i.load();
   runApp(const MusicApp());
@@ -108,7 +109,19 @@ class _ShellState extends State<Shell> {
   @override
   void initState() {
     super.initState();
-    Permission.notification.request(); // Android 13+ pe notification ke liye zaroori
+    _askNotification();
+  }
+
+  Future<void> _askNotification() async {
+    var st = await Permission.notification.status;
+    if (!st.isGranted) st = await Permission.notification.request();
+    if (!st.isGranted && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 8),
+        content: const Text('Turn on notifications to control music from the lock screen'),
+        action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+      ));
+    }
   }
 
   @override

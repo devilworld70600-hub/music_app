@@ -117,6 +117,95 @@ class Api {
       _u('video', {'q': '${s.title} ${s.artist}'}).toString();
 }
 
+// ---------- Infinite feed ----------
+// API ek baar me ~5 gaane deti hai, isliye ek topic ke kai variants search karke
+// naye gaane jodte jate hain (duplicates hata ke).
+class Feed {
+  final int maxSec;
+  final List<String> variants;
+  final Set<String> seen = {};
+  int _i = 0;
+
+  Feed(String base, {List<String>? variants, this.maxSec = 720})
+      : variants = variants ?? _defaults(base);
+
+  bool get done => _i >= variants.length;
+
+  static List<String> _defaults(String q) {
+    final y = DateTime.now().year;
+    return [
+      q, '$q song', '$q new song', '$q official audio', '$q lyrics', '$q latest',
+      '$q hit songs', '$q top songs', '$q $y', '$q ${y - 1}', '$q ${y - 2}',
+      '$q romantic', '$q sad songs', '$q party', '$q remix', '$q full song',
+      '$q jukebox', '$q best of', '$q old songs', '$q mashup', '$q lofi',
+      '$q live', '$q video song', '$q unplugged', '$q slowed reverb', '$q dj',
+      '$q status', '$q viral', '$q trending', '$q superhit', '$q love songs',
+      '$q ${y - 3}', '$q ${y - 4}', '$q audio', '$q music video', '$q acoustic',
+    ];
+  }
+
+  Future<List<Song>> next({int batch = 4}) async {
+    if (done) return [];
+    final qs = variants.skip(_i).take(batch).toList();
+    _i += qs.length;
+    final lists = await Future.wait(qs.map((x) =>
+        Api._songs('search', {'q': x, 'limit': '25'}, maxSec: maxSec)
+            .catchError((_) => <Song>[])));
+    final out = <Song>[];
+    for (final l in lists) {
+      for (final s in l) {
+        if (seen.add(s.id)) out.add(s);
+      }
+    }
+    return out;
+  }
+}
+
+class FeedController extends ChangeNotifier {
+  FeedController(this.title, String base,
+      {this.first, List<String>? variants, int maxSec = 720})
+      : feed = Feed(base, variants: variants, maxSec: maxSec);
+
+  final String title;
+  final Feed feed;
+  final Future<List<Song>> Function()? first;
+  final List<Song> songs = [];
+  bool loading = false, loaded = false;
+  bool get done => feed.done;
+
+  Future<void> loadMore({int target = 0}) async {
+    if (loading) return;
+    loading = true;
+    try {
+      var l = <Song>[];
+      if (songs.isEmpty && !loaded && first != null) {
+        try {
+          l = await first!();
+        } catch (_) {}
+        for (final s in l) {
+          feed.seen.add(s.id);
+        }
+      }
+      if (l.isEmpty) l = await feed.next();
+      songs.addAll(l);
+      notifyListeners();
+      while (songs.length < target && !feed.done) {
+        songs.addAll(await feed.next());
+        notifyListeners();
+      }
+    } catch (_) {}
+    loading = false;
+    loaded = true;
+    notifyListeners();
+  }
+
+  Future<List<Song>> fetchNew() async {
+    final before = songs.length;
+    await loadMore();
+    return songs.sublist(before);
+  }
+}
+
 // ---------- Player ----------
 class PlayerService extends ChangeNotifier {
   PlayerService._() {
@@ -127,6 +216,7 @@ class PlayerService extends ChangeNotifier {
       index = i;
       Library.i.addRecent(queue[i]);
       notifyListeners();
+      if (Library.i.autoplay && i >= queue.length - 3) _extend();
     });
     player.playerStateStream.listen((_) => notifyListeners());
   }
@@ -140,6 +230,9 @@ class PlayerService extends ChangeNotifier {
   Timer? _sleep;
   String source = '';
   ConcatenatingAudioSource? _cs;
+  Future<List<Song>> Function()? _more;
+  Feed? _related;
+  bool _extending = false;
 
   Song? get current => (index >= 0 && index < queue.length) ? queue[index] : null;
 
@@ -154,10 +247,13 @@ class PlayerService extends ChangeNotifier {
         ),
       );
 
-  Future<void> playQueue(List<Song> songs, int start, {String source = ''}) async {
+  Future<void> playQueue(List<Song> songs, int start,
+      {String source = '', Future<List<Song>> Function()? more}) async {
     queue = List.of(songs);
     index = start;
     this.source = source;
+    _more = more;
+    _related = null;
     notifyListeners();
     try {
       _cs = ConcatenatingAudioSource(children: queue.map(_src).toList());
@@ -166,6 +262,31 @@ class PlayerService extends ChangeNotifier {
     } catch (_) {
       // play nahi hua; UI me spinner band ho jayega
     }
+  }
+
+  // Autoplay: queue khatam hone se pehle milte-julte gaane jod do
+  Future<void> _extend() async {
+    if (_extending || _cs == null) return;
+    _extending = true;
+    try {
+      var l = <Song>[];
+      if (_more != null) l = await _more!();
+      if (l.isEmpty) {
+        final s = current;
+        if (s != null) {
+          _related ??= Feed(s.title);
+          l = await _related!.next();
+        }
+      }
+      final have = queue.map((x) => x.id).toSet();
+      l = l.where((x) => have.add(x.id)).toList();
+      if (l.isNotEmpty) {
+        queue.addAll(l);
+        await _cs!.addAll(l.map(_src).toList());
+        notifyListeners();
+      }
+    } catch (_) {}
+    _extending = false;
   }
 
   Future<void> addToQueue(Song s) async {
@@ -221,6 +342,7 @@ class Library extends ChangeNotifier {
   List<Song> liked = [];
   List<Song> recent = [];
   List<String> searches = [];
+  bool autoplay = true;
 
   List<Song> _songs(SharedPreferences p, String k) => (p.getStringList(k) ?? [])
       .map((e) => Song.fromJson(jsonDecode(e) as Map<String, dynamic>))
@@ -231,6 +353,7 @@ class Library extends ChangeNotifier {
     liked = _songs(p, 'liked');
     recent = _songs(p, 'recent');
     searches = p.getStringList('searches') ?? [];
+    autoplay = p.getBool('autoplay') ?? true;
     notifyListeners();
   }
 
@@ -240,6 +363,13 @@ class Library extends ChangeNotifier {
     await p.setStringList('liked', enc(liked));
     await p.setStringList('recent', enc(recent));
     await p.setStringList('searches', searches);
+  }
+
+  Future<void> setAutoplay(bool v) async {
+    autoplay = v;
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('autoplay', v);
   }
 
   bool isLiked(Song s) => liked.any((x) => x.id == s.id);

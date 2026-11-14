@@ -126,8 +126,35 @@ class SongList extends StatelessWidget {
 }
 
 // ---------- Home ----------
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final _feeds = <FeedController>[
+    FeedController('Trending now', 'top hindi songs', first: Api.trending),
+    FeedController('Punjabi hits', 'punjabi songs'),
+    FeedController('Haryanvi', 'haryanvi songs'),
+    FeedController('Romantic', 'romantic hindi songs'),
+    FeedController('Chill', 'lofi hindi songs'),
+    FeedController('Bhojpuri', 'bhojpuri songs'),
+    FeedController('Old is gold', 'old hindi songs'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAll();
+  }
+
+  // 2-2 rows ek saath load hoti hain, jo ready ho wahi dikh jati hai
+  Future<void> _loadAll() async {
+    for (var i = 0; i < _feeds.length; i += 2) {
+      await Future.wait(_feeds.skip(i).take(2).map((f) => f.loadMore(target: 10)));
+    }
+  }
 
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -139,92 +166,170 @@ class HomeScreen extends StatelessWidget {
                 ? const SizedBox.shrink()
                 : SongRow('Recently played', Library.i.recent),
           ),
-          Section('Trending now', () async {
-            try {
-              final r = await Api.trending();
-              if (r.isNotEmpty) return r;
-            } catch (_) {}
-            return Api.search('top hindi songs', extra: 1);
-          }),
-          Section('Punjabi hits', () => Api.search('punjabi hit songs', extra: 1)),
-          Section('Haryanvi', () => Api.search('haryanvi songs', extra: 1)),
-          Section('Romantic', () => Api.search('arijit singh songs', extra: 1)),
-          Section('Chill', () => Api.search('lofi hindi songs', extra: 1)),
+          for (final f in _feeds)
+            ListenableBuilder(
+              listenable: f,
+              builder: (_, __) => f.songs.isEmpty
+                  ? const SizedBox.shrink()
+                  : SongRow(f.title, f.songs, ctrl: f),
+            ),
           const SizedBox(height: 16),
         ]),
       );
 }
 
-class Section extends StatefulWidget {
-  final String title;
-  final Future<List<Song>> Function() load;
-  const Section(this.title, this.load, {super.key});
-  @override
-  State<Section> createState() => _SectionState();
-}
-
-class _SectionState extends State<Section> {
-  late final Future<List<Song>> _f = widget.load();
-
-  @override
-  Widget build(BuildContext context) => FutureBuilder<List<Song>>(
-        future: _f,
-        builder: (_, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return const SizedBox.shrink();
-          }
-          final songs = snap.data ?? [];
-          if (songs.isEmpty) return const SizedBox.shrink();
-          return SongRow(widget.title, songs);
-        },
-      );
-}
-
-class SongRow extends StatelessWidget {
+class SongRow extends StatefulWidget {
   final String title;
   final List<Song> songs;
-  const SongRow(this.title, this.songs, {super.key});
+  final FeedController? ctrl;
+  const SongRow(this.title, this.songs, {this.ctrl, super.key});
+  @override
+  State<SongRow> createState() => _SongRowState();
+}
+
+class _SongRowState extends State<SongRow> {
+  final _sc = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _sc.addListener(() {
+      final c = widget.ctrl;
+      if (c != null && _sc.hasClients && _sc.position.pixels > _sc.position.maxScrollExtent - 250) {
+        c.loadMore();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sc.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final songs = widget.songs;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Text(title,
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w500)),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+        child: Row(children: [
+          Expanded(
+            child: Text(widget.title,
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w500)),
+          ),
+          if (widget.ctrl != null)
+            TextButton(
+              style: TextButton.styleFrom(
+                  foregroundColor: Colors.white70, textStyle: const TextStyle(fontSize: 13)),
+              onPressed: () => Navigator.push(
+                  context, MaterialPageRoute(builder: (_) => FeedScreen(widget.ctrl!))),
+              child: const Text('See all'),
             ),
-            SizedBox(
-              height: 168,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                itemCount: songs.length,
-                itemBuilder: (_, i) {
-                  final s = songs[i];
-                  return GestureDetector(
-                    onTap: () => PlayerService.i.playQueue(songs, i, source: title),
-                    child: Container(
-                      width: 112,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Thumb(s.thumb, 112, radius: 8),
-                        const SizedBox(height: 8),
-                        Text(s.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                        Text(s.artist,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.grey, fontSize: 11.5)),
-                      ]),
-                    ),
-                  );
-                },
+        ]),
+      ),
+      SizedBox(
+        height: 168,
+        child: ListView.builder(
+          controller: _sc,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          itemCount: songs.length,
+          itemBuilder: (_, i) {
+            final s = songs[i];
+            return GestureDetector(
+              onTap: () => PlayerService.i
+                  .playQueue(songs, i, source: widget.title, more: widget.ctrl?.fetchNew),
+              child: Container(
+                width: 112,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Thumb(s.thumb, 112, radius: 8),
+                  const SizedBox(height: 8),
+                  Text(s.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(s.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.grey, fontSize: 11.5)),
+                ]),
               ),
-            ),
-          ]);
+            );
+          },
+        ),
+      ),
+    ]);
   }
+}
+
+// "See all" screen: neeche scroll karte raho, gaane aate rahenge
+class FeedScreen extends StatelessWidget {
+  final FeedController ctrl;
+  const FeedScreen(this.ctrl, {super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF121212),
+          title: Text(ctrl.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+        ),
+        body: FeedList(ctrl, key: ObjectKey(ctrl)),
+        bottomNavigationBar: const MiniPlayer(),
+      );
+}
+
+class FeedList extends StatefulWidget {
+  final FeedController ctrl;
+  const FeedList(this.ctrl, {super.key});
+  @override
+  State<FeedList> createState() => _FeedListState();
+}
+
+class _FeedListState extends State<FeedList> {
+  final _sc = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _sc.addListener(() {
+      if (_sc.hasClients && _sc.position.pixels > _sc.position.maxScrollExtent - 400) {
+        widget.ctrl.loadMore();
+      }
+    });
+    if (widget.ctrl.songs.isEmpty) widget.ctrl.loadMore(target: 12);
+  }
+
+  @override
+  void dispose() {
+    _sc.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: widget.ctrl,
+        builder: (_, __) {
+          final l = widget.ctrl.songs;
+          if (l.isEmpty) {
+            return Center(
+              child: Text(widget.ctrl.loaded ? 'No results' : '',
+                  style: const TextStyle(color: Colors.grey)),
+            );
+          }
+          return ListView.builder(
+            controller: _sc,
+            padding: const EdgeInsets.only(bottom: 16),
+            itemCount: l.length,
+            itemBuilder: (_, i) => SongTile(
+              l[i],
+              () => PlayerService.i
+                  .playQueue(l, i, source: widget.ctrl.title, more: widget.ctrl.fetchNew),
+            ),
+          );
+        },
+      );
 }
 
 // ---------- Search ----------
@@ -237,48 +342,59 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final _ctrl = TextEditingController();
   Timer? _debounce;
-  List<Song> _songs = [];
   List<String> _suggestions = [];
-  bool _loading = false;
-  String? _error;
+  FeedController? _main;
+  final Map<int, FeedController> _extra = {}; // albums / playlists (current query)
+  final Map<int, FeedController> _browse = {}; // search khali ho tab chips ka content
   String _q = '';
   int _filter = 0; // 0 All, 1 Songs, 2 Artists, 3 Albums, 4 Playlists
-  final Map<int, List<Song>> _extra = {};
 
-  Future<void> _selectFilter(int i) async {
-    setState(() => _filter = i);
-    if ((i == 3 || i == 4) && _q.isNotEmpty && _extra[i] == null) {
-      setState(() => _loading = true);
-      try {
-        _extra[i] = await Api.search('$_q ${i == 3 ? 'full album' : 'playlist'}',
-            extra: 1, maxSec: 7200);
-      } catch (_) {
-        _extra[i] = [];
-      }
-      if (mounted) setState(() => _loading = false);
-    }
-  }
+  static const _labels = ['All', 'Songs', 'Artists', 'Albums', 'Playlists'];
+  static const _artists = [
+    'Arijit Singh', 'Diljit Dosanjh', 'Sidhu Moose Wala', 'Badshah', 'Neha Kakkar',
+    'Shreya Ghoshal', 'AP Dhillon', 'Karan Aujla', 'Yo Yo Honey Singh', 'Jubin Nautiyal',
+    'Atif Aslam', 'Sonu Nigam', 'Kumar Sanu', 'Lata Mangeshkar', 'Kishore Kumar',
+    'Jasleen Royal', 'Guru Randhawa', 'B Praak', 'Darshan Raval', 'Pritam',
+  ];
 
-  Future<void> _search(String q) async {
+  FeedController _extraCtrl(int i) => _extra.putIfAbsent(
+        i,
+        () => FeedController(
+          i == 3 ? 'Albums: $_q' : 'Playlists: $_q',
+          _q,
+          variants: i == 3
+              ? ['$_q full album', '$_q album songs', '$_q album jukebox', '$_q audio jukebox', '$_q album']
+              : ['$_q playlist', '$_q hits playlist', '$_q top 10 songs', '$_q nonstop songs', '$_q best songs'],
+          maxSec: 7200,
+        ),
+      );
+
+  FeedController _browseCtrl(int i) => _browse.putIfAbsent(i, () {
+        if (i == 1) return FeedController('Popular songs', 'top hindi songs');
+        if (i == 3) {
+          return FeedController('Popular albums', '', maxSec: 7200, variants: [
+            'bollywood full album', 'punjabi full album', 'hindi album jukebox',
+            'romantic hindi album', 'arijit singh album', 'new album songs', 'haryanvi album',
+          ]);
+        }
+        return FeedController('Popular playlists', '', maxSec: 7200, variants: [
+          'bollywood hits playlist', 'punjabi hits playlist', 'romantic songs playlist',
+          'party songs playlist', 'sad songs playlist', 'lofi playlist', 'workout songs playlist',
+        ]);
+      });
+
+  void _search(String q) {
     q = q.trim();
     if (q.isEmpty) return;
     Library.i.addSearch(q);
     FocusScope.of(context).unfocus();
+    final c = FeedController('Search: $q', q);
     setState(() {
-      _loading = true;
-      _error = null;
       _q = q;
-      _filter = 0;
+      _main = c;
       _extra.clear();
     });
-    try {
-      final r = await Api.search(q);
-      if (mounted) setState(() => _songs = r);
-    } catch (_) {
-      if (mounted) setState(() => _error = 'Something went wrong. Try again');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    c.loadMore(target: 12);
     Api.suggest(q).then((s) {
       if (mounted) setState(() => _suggestions = s);
     });
@@ -303,6 +419,24 @@ class _SearchScreenState extends State<SearchScreen> {
     _ctrl.dispose();
     super.dispose();
   }
+
+  Widget _pill(String t, bool sel, VoidCallback onTap) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: sel ? kAccent : const Color(0xFF2A2A2A),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(t,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: sel ? Colors.black : Colors.white)),
+        ),
+      );
 
   Widget _top(Song s, VoidCallback play) => GestureDetector(
         onTap: play,
@@ -340,6 +474,24 @@ class _SearchScreenState extends State<SearchScreen> {
           ]),
         ),
       );
+
+  Widget _artistList(List<String> names) => ListView(children: [
+        for (final n in names)
+          ListTile(
+            leading: const CircleAvatar(
+                radius: 22, backgroundColor: kCard, child: Icon(Icons.person, size: 22)),
+            title: Text(n,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            subtitle: const Text('Artist', style: TextStyle(fontSize: 12)),
+            onTap: () {
+              _ctrl.text = n;
+              setState(() => _filter = 1);
+              _search(n);
+            },
+          ),
+      ]);
 
   Widget _recentSearches() => ListenableBuilder(
         listenable: Library.i,
@@ -379,57 +531,58 @@ class _SearchScreenState extends State<SearchScreen> {
       );
 
   Widget _results() {
-    if (_ctrl.text.trim().isEmpty) return _recentSearches();
-    if (_songs.isEmpty) {
-      return Center(
-        child: Text(_loading ? '' : 'Search for songs or artists',
-            style: const TextStyle(color: Colors.grey)),
-      );
+    final typed = _ctrl.text.trim().isNotEmpty;
+    final c = _main;
+    // search nahi hua: chips ka apna popular content
+    if (c == null || !typed) {
+      if (_filter == 0) return _recentSearches();
+      if (_filter == 2) return _artistList(_artists);
+      return FeedList(_browseCtrl(_filter), key: ValueKey('browse$_filter'));
     }
-    final src = 'Search: $_q';
-    void play(int i) => PlayerService.i.playQueue(_songs, i, source: src);
-
-    if (_filter == 1) return SongList(_songs, source: src);
+    if (_filter == 1) return FeedList(c, key: ObjectKey(c));
     if (_filter == 3 || _filter == 4) {
-      final l = _extra[_filter];
-      if (l == null) return const SizedBox.shrink();
-      if (l.isEmpty) {
-        return const Center(child: Text('No results', style: TextStyle(color: Colors.grey)));
-      }
-      return SongList(l, source: _filter == 3 ? 'Albums: $_q' : 'Playlists: $_q');
+      final e = _extraCtrl(_filter);
+      return FeedList(e, key: ObjectKey(e));
     }
     if (_filter == 2) {
-      final seen = <String>{};
-      final artists = _songs.where((s) => seen.add(s.artist)).toList();
-      return ListView(children: [
-        for (final s in artists)
-          ListTile(
-            leading: CircleAvatar(radius: 22, backgroundImage: NetworkImage(s.thumb)),
-            title: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-            subtitle: const Text('Artist', style: TextStyle(fontSize: 12)),
-            onTap: () {
-              _ctrl.text = s.artist;
-              _search(s.artist);
-            },
-          ),
-      ]);
+      return ListenableBuilder(
+        listenable: c,
+        builder: (_, __) {
+          final seen = <String>{};
+          return _artistList([for (final s in c.songs) if (seen.add(s.artist)) s.artist]);
+        },
+      );
     }
-    return ListView(padding: const EdgeInsets.only(bottom: 16), children: [
-      _top(_songs.first, () => play(0)),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 8, 4),
-        child: Row(children: [
-          const Text('Songs', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w500)),
-          const Spacer(),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.white70, textStyle: const TextStyle(fontSize: 13)),
-            onPressed: () => _selectFilter(1),
-            child: const Text('See all'),
+    return ListenableBuilder(
+      listenable: c,
+      builder: (_, __) {
+        final songs = c.songs;
+        if (songs.isEmpty) {
+          return Center(
+            child: Text(c.loaded ? 'No results' : '', style: const TextStyle(color: Colors.grey)),
+          );
+        }
+        void play(int i) =>
+            PlayerService.i.playQueue(songs, i, source: c.title, more: c.fetchNew);
+        return ListView(padding: const EdgeInsets.only(bottom: 16), children: [
+          _top(songs.first, () => play(0)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 8, 4),
+            child: Row(children: [
+              const Text('Songs', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w500)),
+              const Spacer(),
+              TextButton(
+                style: TextButton.styleFrom(
+                    foregroundColor: Colors.white70, textStyle: const TextStyle(fontSize: 13)),
+                onPressed: () => setState(() => _filter = 1),
+                child: const Text('See all'),
+              ),
+            ]),
           ),
-        ]),
-      ),
-      for (var i = 0; i < _songs.length && i < 6; i++) SongTile(_songs[i], () => play(i)),
-    ]);
+          for (var i = 0; i < songs.length && i < 6; i++) SongTile(songs[i], () => play(i)),
+        ]);
+      },
+    );
   }
 
   @override
@@ -455,8 +608,9 @@ class _SearchScreenState extends State<SearchScreen> {
                   onPressed: () {
                     _ctrl.clear();
                     setState(() {
-                      _songs = [];
                       _suggestions = [];
+                      _main = null;
+                      _extra.clear();
                     });
                   },
                 ),
@@ -468,30 +622,13 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           SizedBox(
-            height: 46,
+            height: 50,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
               children: [
-                for (var i = 0; i < 5; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(['All', 'Songs', 'Artists', 'Albums', 'Playlists'][i]),
-                      labelStyle: TextStyle(
-                          fontSize: 13, color: _filter == i ? Colors.black : Colors.white),
-                      labelPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                      selected: _filter == i,
-                      selectedColor: kAccent,
-                      backgroundColor: const Color(0xFF2A2A2A),
-                      side: BorderSide.none,
-                      showCheckmark: false,
-                      shape: const StadiumBorder(),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      onSelected: (_) => _selectFilter(i),
-                    ),
-                  ),
+                for (var i = 0; i < _labels.length; i++)
+                  _pill(_labels[i], _filter == i, () => setState(() => _filter = i)),
               ],
             ),
           ),
@@ -500,27 +637,17 @@ class _SearchScreenState extends State<SearchScreen> {
               height: 38,
               child: ListView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.only(left: 16),
                 children: [
                   for (final s in _suggestions)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ActionChip(
-                        label: Text(s, style: const TextStyle(fontSize: 13)),
-                        backgroundColor: const Color(0xFF2A2A2A),
-                        side: BorderSide.none,
-                        visualDensity: VisualDensity.compact,
-                        shape: const StadiumBorder(),
-                        onPressed: () {
-                          _ctrl.text = s;
-                          _search(s);
-                        },
-                      ),
-                    ),
+                    _pill(s, false, () {
+                      _ctrl.text = s;
+                      _search(s);
+                    }),
                 ],
               ),
             ),
-          if (_error != null) Padding(padding: const EdgeInsets.all(16), child: Text(_error!)),
+          const SizedBox(height: 4),
           Expanded(child: _results()),
         ]),
       );
@@ -725,9 +852,21 @@ class _NowPlayingState extends State<NowPlayingScreen> {
                     ),
                     PopupMenuButton<String>(
                       icon: const Icon(Icons.more_vert),
-                      onSelected: (_) => copyLink(ctx, s),
-                      itemBuilder: (_) =>
-                          const [PopupMenuItem(value: 'link', child: Text('Copy link'))],
+                      onSelected: (v) {
+                        if (v == 'autoplay') {
+                          Library.i.setAutoplay(!Library.i.autoplay);
+                        } else {
+                          copyLink(ctx, s);
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        CheckedPopupMenuItem<String>(
+                          value: 'autoplay',
+                          checked: Library.i.autoplay,
+                          child: const Text('Autoplay'),
+                        ),
+                        const PopupMenuItem(value: 'link', child: Text('Copy link')),
+                      ],
                     ),
                   ]),
                   const SizedBox(height: 16),
