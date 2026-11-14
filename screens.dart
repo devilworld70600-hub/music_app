@@ -43,8 +43,26 @@ class Header extends StatelessWidget {
   const Header(this.text, {super.key});
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-        child: Text(text, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w400)),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+        child: Text(text, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w500)),
+      );
+}
+
+class BrandHeader extends StatelessWidget {
+  const BrandHeader({super.key});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+        child: Row(children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.asset('assets/icon.png', width: 30, height: 30),
+          ),
+          const SizedBox(width: 10),
+          const Text('Universal Music',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+        ]),
       );
 }
 
@@ -60,20 +78,20 @@ class SongTile extends StatelessWidget {
           final active = PlayerService.i.current?.id == s.id;
           return ListTile(
             contentPadding: const EdgeInsets.only(left: 16, right: 4),
-            leading: Thumb(s.thumb, 52),
+            leading: Thumb(s.thumb, 46),
             title: Row(children: [
               if (active)
                 const Padding(
                     padding: EdgeInsets.only(right: 6),
-                    child: Icon(Icons.signal_cellular_alt, color: kAccent, size: 20)),
+                    child: Icon(Icons.signal_cellular_alt, color: kAccent, size: 16)),
               Expanded(
                 child: Text(s.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 16, color: active ? kAccent : null)),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: active ? kAccent : null)),
               ),
             ]),
-            subtitle: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.white60)),
             trailing: PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
               onSelected: (v) {
@@ -114,7 +132,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SafeArea(
         child: ListView(children: [
-          const Header('Home'),
+          const BrandHeader(),
           ListenableBuilder(
             listenable: Library.i,
             builder: (_, __) => Library.i.recent.isEmpty
@@ -153,7 +171,7 @@ class _SectionState extends State<Section> {
         future: _f,
         builder: (_, snap) {
           if (snap.connectionState != ConnectionState.done) {
-            return const SizedBox(height: 120, child: Center(child: CircularProgressIndicator()));
+            return const SizedBox.shrink();
           }
           final songs = snap.data ?? [];
           if (songs.isEmpty) return const SizedBox.shrink();
@@ -173,10 +191,10 @@ class SongRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: Text(title,
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w400)),
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w500)),
             ),
             SizedBox(
-              height: 205,
+              height: 168,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -186,19 +204,19 @@ class SongRow extends StatelessWidget {
                   return GestureDetector(
                     onTap: () => PlayerService.i.playQueue(songs, i, source: title),
                     child: Container(
-                      width: 140,
+                      width: 112,
                       margin: const EdgeInsets.symmetric(horizontal: 4),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Thumb(s.thumb, 140, radius: 10),
+                        Thumb(s.thumb, 112, radius: 8),
                         const SizedBox(height: 8),
                         Text(s.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w500)),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                         Text(s.artist,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                            style: const TextStyle(color: Colors.grey, fontSize: 11.5)),
                       ]),
                     ),
                   );
@@ -293,7 +311,7 @@ class _SearchScreenState extends State<SearchScreen> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(20)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Thumb(s.thumb, 100, radius: 8),
+            Thumb(s.thumb, 84, radius: 8),
             const SizedBox(height: 14),
             Row(children: [
               Expanded(
@@ -301,19 +319,19 @@ class _SearchScreenState extends State<SearchScreen> {
                   Text(s.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w400)),
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500)),
                   Text('Song • ${s.artist}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 15, color: Colors.white70)),
+                      style: const TextStyle(fontSize: 13, color: Colors.white70)),
                 ]),
               ),
               const SizedBox(width: 12),
               CircleAvatar(
-                radius: 30,
+                radius: 24,
                 backgroundColor: kAccent,
                 child: IconButton(
-                  iconSize: 32,
+                  iconSize: 26,
                   icon: const Icon(Icons.play_arrow, color: Colors.white),
                   onPressed: play,
                 ),
@@ -337,15 +355,16 @@ class _SearchScreenState extends State<SearchScreen> {
               padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
               child: Row(children: [
                 const Text('Recent searches',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w400)),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
                 const Spacer(),
                 TextButton(onPressed: Library.i.clearSearches, child: const Text('Clear all')),
               ]),
             ),
             for (final q in l)
               ListTile(
-                leading: const Icon(Icons.history),
-                title: Text(q),
+                dense: true,
+                leading: const Icon(Icons.history, size: 20),
+                title: Text(q, style: const TextStyle(fontSize: 14)),
                 trailing: IconButton(
                   icon: const Icon(Icons.close),
                   onPressed: () => Library.i.removeSearch(q),
@@ -385,9 +404,9 @@ class _SearchScreenState extends State<SearchScreen> {
       return ListView(children: [
         for (final s in artists)
           ListTile(
-            leading: CircleAvatar(radius: 26, backgroundImage: NetworkImage(s.thumb)),
-            title: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: const Text('Artist'),
+            leading: CircleAvatar(radius: 22, backgroundImage: NetworkImage(s.thumb)),
+            title: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            subtitle: const Text('Artist', style: TextStyle(fontSize: 12)),
             onTap: () {
               _ctrl.text = s.artist;
               _search(s.artist);
@@ -400,10 +419,10 @@ class _SearchScreenState extends State<SearchScreen> {
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 20, 8, 4),
         child: Row(children: [
-          const Text('Songs', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w400)),
+          const Text('Songs', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w500)),
           const Spacer(),
           TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.white70, textStyle: const TextStyle(fontSize: 15)),
+            style: TextButton.styleFrom(foregroundColor: Colors.white70, textStyle: const TextStyle(fontSize: 13)),
             onPressed: () => _selectFilter(1),
             child: const Text('See all'),
           ),
@@ -424,8 +443,12 @@ class _SearchScreenState extends State<SearchScreen> {
               textInputAction: TextInputAction.search,
               onSubmitted: _search,
               onChanged: _onChanged,
+              style: const TextStyle(fontSize: 14),
               decoration: InputDecoration(
                 hintText: 'What do you want to listen to?',
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                hintStyle: const TextStyle(fontSize: 14),
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.close),
@@ -445,10 +468,10 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           SizedBox(
-            height: 64,
+            height: 46,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               children: [
                 for (var i = 0; i < 5; i++)
                   Padding(
@@ -456,14 +479,16 @@ class _SearchScreenState extends State<SearchScreen> {
                     child: ChoiceChip(
                       label: Text(['All', 'Songs', 'Artists', 'Albums', 'Playlists'][i]),
                       labelStyle: TextStyle(
-                          fontSize: 16, color: _filter == i ? Colors.black : Colors.white),
-                      labelPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          fontSize: 13, color: _filter == i ? Colors.black : Colors.white),
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
                       selected: _filter == i,
                       selectedColor: kAccent,
                       backgroundColor: const Color(0xFF2A2A2A),
                       side: BorderSide.none,
                       showCheckmark: false,
                       shape: const StadiumBorder(),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       onSelected: (_) => _selectFilter(i),
                     ),
                   ),
@@ -472,7 +497,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
           if (_suggestions.isNotEmpty)
             SizedBox(
-              height: 44,
+              height: 38,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -481,7 +506,10 @@ class _SearchScreenState extends State<SearchScreen> {
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ActionChip(
-                        label: Text(s),
+                        label: Text(s, style: const TextStyle(fontSize: 13)),
+                        backgroundColor: const Color(0xFF2A2A2A),
+                        side: BorderSide.none,
+                        visualDensity: VisualDensity.compact,
                         shape: const StadiumBorder(),
                         onPressed: () {
                           _ctrl.text = s;
@@ -492,7 +520,6 @@ class _SearchScreenState extends State<SearchScreen> {
                 ],
               ),
             ),
-          if (_loading) const LinearProgressIndicator(),
           if (_error != null) Padding(padding: const EdgeInsets.all(16), child: Text(_error!)),
           Expanded(child: _results()),
         ]),
@@ -509,7 +536,7 @@ class LibraryScreen extends StatelessWidget {
           const Header('Your Library'),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text('Liked songs', style: TextStyle(fontSize: 20)),
+            child: Text('Liked songs', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
           ),
           const SizedBox(height: 8),
           Expanded(
@@ -547,9 +574,9 @@ class MiniPlayer extends StatelessWidget {
               child: Column(children: [
                 ListTile(
                   dense: true,
-                  leading: Thumb(s.thumb, 44),
-                  title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  leading: Thumb(s.thumb, 40),
+                  title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                  subtitle: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.white60)),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     IconButton(
                       icon: Icon(liked ? Icons.favorite : Icons.favorite_border,
@@ -630,7 +657,7 @@ class _NowPlayingState extends State<NowPlayingScreen> {
           Row(children: [
             const Icon(Icons.lyrics_outlined),
             const SizedBox(width: 12),
-            const Text('Lyrics', style: TextStyle(fontSize: 20)),
+            const Text('Lyrics', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
             const Spacer(),
             if (_lyrics != null)
               TextButton(
@@ -640,7 +667,7 @@ class _NowPlayingState extends State<NowPlayingScreen> {
           ]),
           const SizedBox(height: 8),
           if (!_lyricsDone)
-            const LinearProgressIndicator()
+            const SizedBox.shrink()
           else if (_lyrics == null)
             const Text('Lyrics not found', style: TextStyle(color: Colors.white70))
           else
@@ -648,7 +675,7 @@ class _NowPlayingState extends State<NowPlayingScreen> {
               constraints: BoxConstraints(maxHeight: _expanded ? double.infinity : 90),
               child: ClipRect(
                 child: Text(_lyrics!,
-                    style: const TextStyle(fontSize: 18, height: 1.5, fontWeight: FontWeight.w600)),
+                    style: const TextStyle(fontSize: 15, height: 1.5, fontWeight: FontWeight.w500)),
               ),
             ),
         ]),
@@ -689,11 +716,11 @@ class _NowPlayingState extends State<NowPlayingScreen> {
                     Expanded(
                       child: Column(children: [
                         Text(p.source.startsWith('Search') ? 'PLAYING FROM SEARCH' : 'PLAYING FROM',
-                            style: TextStyle(letterSpacing: 1.5, fontSize: 12, color: Colors.white70)),
+                            style: TextStyle(letterSpacing: 1.5, fontSize: 11, color: Colors.white70)),
                         Text(p.source.isEmpty ? 'Now playing' : p.source,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 16)),
+                            style: const TextStyle(fontSize: 13)),
                       ]),
                     ),
                     PopupMenuButton<String>(
@@ -704,11 +731,14 @@ class _NowPlayingState extends State<NowPlayingScreen> {
                     ),
                   ]),
                   const SizedBox(height: 16),
-                  AspectRatio(
-                    aspectRatio: 1,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: squareArt(s.thumb),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: squareArt(s.thumb),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -718,11 +748,11 @@ class _NowPlayingState extends State<NowPlayingScreen> {
                         Text(s.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w400)),
+                            style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w500)),
                         Text(s.artist,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 17, color: Colors.white70)),
+                            style: const TextStyle(fontSize: 14, color: Colors.white70)),
                       ]),
                     ),
                     IconButton(
@@ -771,19 +801,19 @@ class _NowPlayingState extends State<NowPlayingScreen> {
                       icon: Icon(Icons.shuffle, color: p.shuffle ? kAccent : null),
                       onPressed: p.toggleShuffle,
                     ),
-                    IconButton(iconSize: 40, icon: const Icon(Icons.skip_previous), onPressed: p.prev),
+                    IconButton(iconSize: 34, icon: const Icon(Icons.skip_previous), onPressed: p.prev),
                     GestureDetector(
                       onTap: p.toggle,
                       child: CircleAvatar(
-                        radius: 36,
+                        radius: 30,
                         backgroundColor: Colors.white,
                         child: loading
                             ? const CircularProgressIndicator(color: Colors.black)
                             : Icon(p.player.playing ? Icons.pause : Icons.play_arrow,
-                                color: Colors.black, size: 44),
+                                color: Colors.black, size: 36),
                       ),
                     ),
-                    IconButton(iconSize: 40, icon: const Icon(Icons.skip_next), onPressed: p.next),
+                    IconButton(iconSize: 34, icon: const Icon(Icons.skip_next), onPressed: p.next),
                     IconButton(
                       icon: Icon(p.loop == LoopMode.one ? Icons.repeat_one : Icons.repeat,
                           color: p.loop == LoopMode.off ? null : kAccent),

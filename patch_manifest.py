@@ -1,5 +1,7 @@
+import glob
 import os
 import re
+import shutil
 import sys
 
 p = sys.argv[1]
@@ -59,3 +61,22 @@ for name in ("build.gradle.kts", "build.gradle"):
         break
 else:
     print("WARNING: build.gradle not found in", app_dir)
+
+# Inter font (repo root me Inter-*.otf ho to) app me jod do
+proj = os.path.dirname(os.path.dirname(app_dir))  # .../app
+fonts = sorted(glob.glob("Inter-*.otf"))
+if fonts:
+    os.makedirs(os.path.join(proj, "assets"), exist_ok=True)
+    entries = ""
+    for f in fonts:
+        shutil.copy(f, os.path.join(proj, "assets", f))
+        w = 600 if "SemiBold" in f else 500 if "Medium" in f else 400
+        entries += "        - asset: assets/%s\n          weight: %d\n" % (f, w)
+    pp = os.path.join(proj, "pubspec.yaml")
+    t = open(pp, encoding="utf-8").read()
+    t = t.replace("  uses-material-design: true\n",
+                  "  uses-material-design: true\n  fonts:\n    - family: Inter\n      fonts:\n" + entries, 1)
+    open(pp, "w", encoding="utf-8").write(t)
+    print("fonts added:", fonts)
+else:
+    print("no Inter fonts found, default font use hoga")

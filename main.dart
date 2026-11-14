@@ -19,27 +19,79 @@ class MusicApp extends StatelessWidget {
   const MusicApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final base = ThemeData.dark(useMaterial3: true);
-    return MaterialApp(
-      title: 'Universal Music',
-      debugShowCheckedModeBanner: false,
-      theme: base.copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        colorScheme: const ColorScheme.dark(primary: kAccent),
-        navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: const Color(0xFF121212),
-          indicatorColor: Colors.transparent,
-          iconTheme: WidgetStateProperty.resolveWith((s) => IconThemeData(
-              color: s.contains(WidgetState.selected) ? Colors.white : Colors.white54)),
-          labelTextStyle: WidgetStateProperty.resolveWith((s) => TextStyle(
-              fontSize: 12,
-              color: s.contains(WidgetState.selected) ? Colors.white : Colors.white54)),
+  Widget build(BuildContext context) => MaterialApp(
+        title: 'Universal Music',
+        debugShowCheckedModeBanner: false,
+        // phone ka bada font setting ho to bhi app ke text bade na dikhen
+        builder: (context, child) => MediaQuery.withClampedTextScaling(
+          minScaleFactor: 0.8,
+          maxScaleFactor: 0.95,
+          child: child!,
         ),
-      ),
-      home: const Shell(),
-    );
+        theme: ThemeData(
+          useMaterial3: true,
+          fontFamily: 'Inter',
+          visualDensity: VisualDensity.compact,
+          scaffoldBackgroundColor: const Color(0xFF121212),
+          colorScheme: const ColorScheme.dark(primary: kAccent),
+          navigationBarTheme: NavigationBarThemeData(
+            height: 60,
+            backgroundColor: const Color(0xFF121212),
+            indicatorColor: Colors.transparent,
+            iconTheme: WidgetStateProperty.resolveWith((s) => IconThemeData(
+                color: s.contains(WidgetState.selected) ? Colors.white : Colors.white54)),
+            labelTextStyle: WidgetStateProperty.resolveWith((s) => TextStyle(
+                fontSize: 11,
+                color: s.contains(WidgetState.selected) ? Colors.white : Colors.white54)),
+          ),
+        ),
+        home: const Root(),
+      );
+}
+
+// Chhota branded splash: logo + naam. App piche load hoti rehti hai.
+class Root extends StatefulWidget {
+  const Root({super.key});
+  @override
+  State<Root> createState() => _RootState();
+}
+
+class _RootState extends State<Root> {
+  bool _splash = true;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (mounted) setState(() => _splash = false);
+    });
   }
+
+  @override
+  Widget build(BuildContext context) => Stack(children: [
+        const Shell(),
+        if (_splash) const Positioned.fill(child: _SplashView()),
+      ]);
+}
+
+class _SplashView extends StatelessWidget {
+  const _SplashView();
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: const Color(0xFF080605),
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(22),
+              child: Image.asset('assets/icon.png', width: 88, height: 88),
+            ),
+            const SizedBox(height: 14),
+            const Text('Universal Music',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white)),
+          ]),
+        ),
+      );
 }
 
 class Shell extends StatefulWidget {
