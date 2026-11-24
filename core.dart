@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const kBase = 'https://nazriya.musicmine.in/api';
-const kKey = 'DARK_CHOOMU'; // TODO: baad me apne backend me shift karo
+const kBase = 'https://nazriya.flirt.web.id/api';
+const kKey = 'DARK_RANDD'; // TODO: baad me apne backend me shift karo
 
 // ---------- Model ----------
 class Song {
@@ -21,13 +22,43 @@ class Song {
     required this.duration,
   });
 
-  factory Song.fromJson(Map<String, dynamic> j) => Song(
-        id: (j['id'] ?? '').toString(),
-        title: _clean((j['title'] ?? '').toString()),
-        artist: (j['uploader'] ?? '').toString().trim(),
-        thumb: (j['thumbnail'] ?? '').toString(),
-        duration: (j['duration'] ?? 0) is num ? (j['duration'] as num).toInt() : 0,
-      );
+  factory Song.fromJson(Map<String, dynamic> j) {
+    String pick(List<String> ks) {
+      for (final k in ks) {
+        final v = j[k];
+        if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim();
+      }
+      return '';
+    }
+
+    final title = _clean(pick(['title', 'name', 'song']));
+    final artist = pick(['uploader', 'artist', 'channel', 'author']);
+    var id = pick(['id', 'videoId', 'video_id']);
+    if (id.isEmpty) id = '${title}_$artist'.hashCode.toString();
+    var thumb = pick(['thumbnail', 'thumb', 'image', 'cover']);
+    if (thumb.isEmpty && RegExp(r'^[\w-]{11}$').hasMatch(id)) {
+      thumb = 'https://i.ytimg.com/vi/$id/hqdefault.jpg';
+    }
+    return Song(
+        id: id, title: title, artist: artist, thumb: thumb, duration: _dur(j['duration']));
+  }
+
+  // 225, "225" ya "3:45" teeno chalenge
+  static int _dur(dynamic d) {
+    if (d is num) return d.toInt();
+    if (d is String) {
+      final t = d.trim();
+      if (t.contains(':')) {
+        var sec = 0;
+        for (final x in t.split(':')) {
+          sec = sec * 60 + (int.tryParse(x) ?? 0);
+        }
+        return sec;
+      }
+      return int.tryParse(t) ?? 0;
+    }
+    return 0;
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -46,23 +77,60 @@ class Song {
 
 // ---------- API ----------
 class Api {
+  static const _headers = {
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 13) UniversalMusic',
+    'Accept': 'application/json',
+  };
+
   static Uri _u(String ep, Map<String, String> p) =>
       Uri.parse('$kBase/$ep').replace(queryParameters: {...p, 'key': kKey});
 
+  // network atak jaye to 2 baar try + timeout, taaki app hang na ho
+  static Future<http.Response> _get(Uri u, {int tries = 2}) async {
+    Object? err;
+    for (var i = 0; i < tries; i++) {
+      try {
+        final r = await http.get(u, headers: _headers).timeout(const Duration(seconds: 15));
+        if (r.statusCode == 200) return r;
+        err = Exception('HTTP ${r.statusCode}');
+      } catch (e) {
+        err = e;
+      }
+      await Future.delayed(Duration(milliseconds: 400 * (i + 1)));
+    }
+    throw err ?? Exception('network error');
+  }
+
+  // response kisi bhi shape me ho (list / {results} / {data:{...}}) list nikal lo
+  static List _list(dynamic d) {
+    if (d is List) return d;
+    if (d is Map) {
+      for (final k in ['results', 'data', 'items', 'result', 'videos', 'songs']) {
+        final v = d[k];
+        if (v is List) return v;
+        if (v is Map) {
+          final x = _list(v);
+          if (x.isNotEmpty) return x;
+        }
+      }
+    }
+    return [];
+  }
+
   static Future<List<Song>> _songs(String ep, Map<String, String> p,
       {int maxSec = 720}) async {
-    final r = await http.get(_u(ep, p));
-    if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
-    final d = jsonDecode(r.body);
-    final list = d is List ? d : (d['results'] ?? d['data'] ?? []) as List;
+    final r = await _get(_u(ep, p));
+    final list = _list(jsonDecode(utf8.decode(r.bodyBytes)));
     return list
-        .whereType<Map<String, dynamic>>()
-        .map(Song.fromJson)
-        .where((s) => s.duration >= 45 && s.duration <= maxSec) // shorts/reviews hatao
+        .whereType<Map>()
+        .map((e) => Song.fromJson(Map<String, dynamic>.from(e)))
+        .where((s) => s.title.isNotEmpty)
+        // shorts/reviews hatao (duration pata na ho to rakho)
+        .where((s) => s.duration == 0 || (s.duration >= 45 && s.duration <= maxSec))
         .toList();
   }
 
-  // API ek baar me ~5 hi deti hai, isliye kai variants parallel me mila ke dikhate hain
+  // API ek baar me kam gaane deti hai, isliye kai variants parallel me mila ke dikhate hain
   static Future<List<Song>> search(String q, {int extra = 4, int maxSec = 720}) async {
     final qs = [q, '$q song', '$q official audio', '$q lyrics', '$q new song']
         .take(extra + 1)
@@ -81,7 +149,7 @@ class Api {
     for (final q in ['$title $artist', title]) {
       try {
         final r = await http.get(Uri.parse('https://lrclib.net/api/search')
-            .replace(queryParameters: {'q': q}));
+            .replace(queryParameters: {'q': q})).timeout(const Duration(seconds: 12));
         if (r.statusCode != 200) continue;
         for (final e in jsonDecode(r.body) as List) {
           final t = e['plainLyrics'];
@@ -91,20 +159,22 @@ class Api {
     }
     return null;
   }
-  static Future<List<Song>> trending() => _songs('trending', {});
 
-  // Response format pata nahi, isliye flexible parsing
+  // Naye API me trending endpoint nahi hai, isliye har baar random hit topic search hota hai
+  static const _trendQs = [
+    'top hindi songs', 'new hindi songs', 'latest bollywood songs', 'trending songs',
+    'viral songs', 'bollywood hits', 'arijit singh songs', 'hindi love songs',
+    'top punjabi songs', 'new songs this week',
+  ];
+  static Future<List<Song>> trending() =>
+      _songs('search', {'q': _trendQs[Random().nextInt(_trendQs.length)], 'limit': '25'});
+
+  // Naye API me suggest endpoint nahi, isliye search ke titles se suggestions
   static Future<List<String>> suggest(String q) async {
     try {
-      final r = await http.get(_u('suggest', {'q': q}));
-      final d = jsonDecode(r.body);
-      final list =
-          d is List ? d : (d['suggestions'] ?? d['results'] ?? []) as List;
-      return list
-          .map((e) => e is String ? e : (e['text'] ?? e['title'] ?? '').toString())
-          .where((s) => s.isNotEmpty)
-          .take(8)
-          .toList();
+      final l = await _songs('search', {'q': q, 'limit': '10'}, maxSec: 7200);
+      final seen = <String>{};
+      return [for (final s in l) if (seen.add(s.title.toLowerCase())) s.title].take(8).toList();
     } catch (_) {
       return [];
     }
@@ -122,12 +192,16 @@ class Api {
 // naye gaane jodte jate hain (duplicates hata ke).
 class Feed {
   final int maxSec;
+  final bool shuffle;
   final List<String> variants;
   final Set<String> seen = {};
   int _i = 0;
 
-  Feed(String base, {List<String>? variants, this.maxSec = 720})
-      : variants = variants ?? _defaults(base);
+  // shuffle=true: har baar variants alag order me -> refresh pe naye gaane
+  Feed(String base, {List<String>? variants, this.maxSec = 720, this.shuffle = false})
+      : variants = List.of(variants ?? _defaults(base)) {
+    if (shuffle) this.variants.shuffle();
+  }
 
   bool get done => _i >= variants.length;
 
@@ -157,21 +231,47 @@ class Feed {
         if (seen.add(s.id)) out.add(s);
       }
     }
+    if (shuffle) out.shuffle();
     return out;
   }
 }
 
 class FeedController extends ChangeNotifier {
-  FeedController(this.title, String base,
-      {this.first, List<String>? variants, int maxSec = 720})
-      : feed = Feed(base, variants: variants, maxSec: maxSec);
+  FeedController(this.title, this.base,
+      {this.first, this.variants, this.maxSec = 720, this.shuffle = false})
+      : feed = Feed(base, variants: variants, maxSec: maxSec, shuffle: shuffle);
 
-  final String title;
-  final Feed feed;
+  final String title, base;
+  final List<String>? variants;
+  final int maxSec;
+  final bool shuffle;
+  Feed feed;
   final Future<List<Song>> Function()? first;
   final List<Song> songs = [];
   bool loading = false, loaded = false;
   bool get done => feed.done;
+
+  String get _ck => 'cache_$title';
+
+  // net na ho to pichli baar ke gaane dikha do
+  Future<void> _saveCache() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setStringList(
+          _ck, songs.take(30).map((e) => jsonEncode(e.toJson())).toList());
+    } catch (_) {}
+  }
+
+  Future<void> _loadCache() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final l = (p.getStringList(_ck) ?? [])
+          .map((e) => Song.fromJson(jsonDecode(e) as Map<String, dynamic>));
+      for (final s in l) {
+        if (feed.seen.add(s.id)) songs.add(s);
+      }
+    } catch (_) {}
+  }
 
   Future<void> loadMore({int target = 0}) async {
     if (loading) return;
@@ -193,10 +293,29 @@ class FeedController extends ChangeNotifier {
         songs.addAll(await feed.next());
         notifyListeners();
       }
+      if (songs.isNotEmpty) _saveCache();
     } catch (_) {}
+    if (songs.isEmpty) {
+      await _loadCache();
+    }
     loading = false;
     loaded = true;
     notifyListeners();
+  }
+
+  // Pull-to-refresh: naya feed (naye random variants) shuru karo
+  Future<void> refresh({int target = 10}) async {
+    if (loading) return;
+    final old = List<Song>.of(songs);
+    songs.clear();
+    loaded = false;
+    feed = Feed(base, variants: variants, maxSec: maxSec, shuffle: true);
+    notifyListeners();
+    await loadMore(target: target);
+    if (songs.isEmpty && old.isNotEmpty) {
+      songs.addAll(old);
+      notifyListeners();
+    }
   }
 
   Future<List<Song>> fetchNew() async {
@@ -219,7 +338,19 @@ class PlayerService extends ChangeNotifier {
       if (Library.i.autoplay && i >= queue.length - 3) _extend();
     });
     player.playerStateStream.listen((_) => notifyListeners());
+    // network atka to gaana wahin se dobara try karo (2 baar tak)
+    player.playbackEventStream.listen((_) => _retries = 0, onError: (Object e, StackTrace st) async {
+      if (_retries >= 2 || _cs == null || index < 0) return;
+      _retries++;
+      try {
+        final pos = player.position;
+        await Future.delayed(const Duration(seconds: 1));
+        await player.setAudioSource(_cs!, initialIndex: index, initialPosition: pos);
+        player.play();
+      } catch (_) {}
+    });
   }
+  int _retries = 0;
   static final i = PlayerService._();
 
   final player = AudioPlayer();

@@ -134,13 +134,13 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _feeds = <FeedController>[
-    FeedController('Trending now', 'top hindi songs', first: Api.trending),
-    FeedController('Punjabi hits', 'punjabi songs'),
-    FeedController('Haryanvi', 'haryanvi songs'),
-    FeedController('Romantic', 'romantic hindi songs'),
-    FeedController('Chill', 'lofi hindi songs'),
-    FeedController('Bhojpuri', 'bhojpuri songs'),
-    FeedController('Old is gold', 'old hindi songs'),
+    FeedController('Trending now', 'top hindi songs', first: Api.trending, shuffle: true),
+    FeedController('Punjabi hits', 'punjabi songs', shuffle: true),
+    FeedController('Haryanvi', 'haryanvi songs', shuffle: true),
+    FeedController('Romantic', 'romantic hindi songs', shuffle: true),
+    FeedController('Chill', 'lofi hindi songs', shuffle: true),
+    FeedController('Bhojpuri', 'bhojpuri songs', shuffle: true),
+    FeedController('Old is gold', 'old hindi songs', shuffle: true),
   ];
 
   @override
@@ -156,9 +156,20 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // Pull-to-refresh: sab rows naye gaano ke saath dobara load
+  Future<void> _refresh() async {
+    for (var i = 0; i < _feeds.length; i += 2) {
+      await Future.wait(_feeds.skip(i).take(2).map((f) => f.refresh()));
+    }
+  }
+
   @override
   Widget build(BuildContext context) => SafeArea(
-        child: ListView(children: [
+        child: RefreshIndicator(
+          color: kAccent,
+          backgroundColor: const Color(0xFF282828),
+          onRefresh: _refresh,
+          child: ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
           const BrandHeader(),
           ListenableBuilder(
             listenable: Library.i,
@@ -175,6 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           const SizedBox(height: 16),
         ]),
+        ),
       );
 }
 
