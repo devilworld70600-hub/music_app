@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
@@ -191,7 +192,42 @@ class Api {
     }
   }
 
-  static String audioUrl(Song s) =>
+  // Server pehla byte der se de (ya ExoPlayer ko pasand na aaye) to poori file
+  // pehle lambe timeout ke saath download karke phir file se chalate hain.
+  // Error me HTTP status / server ka message bhi aata hai (debug ke liye).
+  static Future<File> download(String url, String name) async {
+    final dir = Directory('${Directory.systemTemp.path}/um_cache');
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    final f = File('${dir.path}/${name.replaceAll(RegExp(r'[^\w.-]'), '_')}');
+    if (f.existsSync() && f.lengthSync() > 50000) return f;
+    final tmp = File('${f.path}.part');
+    final c = http.Client();
+    try {
+      final req = http.Request('GET', Uri.parse(url))..headers.addAll(playHeaders);
+      final r = await c.send(req).timeout(const Duration(seconds: 90));
+      final ct = r.headers['content-type'] ?? '';
+      if (r.statusCode != 200 || ct.contains('json') || ct.contains('text')) {
+        final body = await r.stream.bytesToString();
+        final short = body.length > 140 ? body.substring(0, 140) : body;
+        throw Exception('HTTP ${r.statusCode} $ct $short');
+      }
+      final sink = tmp.openWrite();
+      await sink.addStream(r.stream.timeout(const Duration(seconds: 60)));
+      await sink.close();
+      if (tmp.lengthSync() < 20000) throw Exception('file too small (${tmp.lengthSync()} bytes)');
+      await tmp.rename(f.path);
+      return f;
+    } catch (e) {
+      try {
+        if (tmp.existsSync()) tmp.deleteSync();
+      } catch (_) {}
+      rethrow;
+    } finally {
+      c.close();
+    }
+  }
+
+  static String audioUrl(Song s) =
       _u('audio', {'q': '${s.title} ${s.artist}'}).toString();
 
   static String videoUrl(Song s) =>
@@ -349,25 +385,14 @@ class PlayerService extends ChangeNotifier {
       if (Library.i.autoplay && i >= queue.length - 3) _extend();
     });
     player.playerStateStream.listen((_) => notifyListeners());
-    // network atka to gaana wahin se dobara try karo (2 baar tak)
-    player.playbackEventStream.listen((_) => _retries = 0, onError: (Object e, StackTrace st) async {
+    // stream fail ho to file download karke chalao (neeche _fileFallback)
+    player.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace st) {
       debugPrint('PLAY ERROR: $e');
-      if (_retries >= 2) {
-        messengerKey.currentState?.showSnackBar(SnackBar(
-            duration: const Duration(seconds: 6),
-            content: Text('Play error: ${e.toString().split("\n").first}')));
-      }
-      if (_retries >= 2 || _cs == null || index < 0) return;
-      _retries++;
-      try {
-        final pos = player.position;
-        await Future.delayed(const Duration(seconds: 1));
-        await player.setAudioSource(_cs!, initialIndex: index, initialPosition: pos);
-        player.play();
-      } catch (_) {}
+      _fileFallback(e);
     });
   }
-  int _retries = 0;
+  final Set<String> _fbTried = {};
+  bool _fbBusy = false;
   static final i = PlayerService._();
 
   final player = AudioPlayer();
@@ -384,17 +409,48 @@ class PlayerService extends ChangeNotifier {
 
   Song? get current => (index >= 0 && index < queue.length) ? queue[index] : null;
 
+  MediaItem _tag(Song s) => MediaItem(
+        id: s.id,
+        title: s.title,
+        artist: s.artist,
+        artUri: Uri.tryParse(s.thumb),
+        duration: Duration(seconds: s.duration),
+      );
+
   AudioSource _src(Song s) => AudioSource.uri(
         Uri.parse(Api.audioUrl(s)),
         headers: Api.playHeaders,
-        tag: MediaItem(
-          id: s.id,
-          title: s.title,
-          artist: s.artist,
-          artUri: Uri.tryParse(s.thumb),
-          duration: Duration(seconds: s.duration),
-        ),
+        tag: _tag(s),
       );
+
+  void _snack(String m) => messengerKey.currentState?.showSnackBar(
+      SnackBar(duration: const Duration(seconds: 8), content: Text(m)));
+
+  // Direct stream fail hua: gaana download karo (lamba timeout) aur file se chalao
+  Future<void> _fileFallback(Object cause) async {
+    final s = current;
+    if (s == null || _fbBusy) return;
+    if (!_fbTried.add(s.id)) {
+      _snack('Play error: ${cause.toString().split("\n").first}');
+      return;
+    }
+    _fbBusy = true;
+    _snack('Loading song, thodi der...');
+    try {
+      final f = await Api.download(Api.audioUrl(s), 'a_${s.id}.webm');
+      final i = index;
+      _cs = ConcatenatingAudioSource(children: [
+        for (var k = 0; k < queue.length; k++)
+          k == i ? AudioSource.file(f.path, tag: _tag(s)) : _src(queue[k])
+      ]);
+      await player.setAudioSource(_cs!, initialIndex: i);
+      messengerKey.currentState?.hideCurrentSnackBar();
+      player.play();
+    } catch (e) {
+      _snack('Song download error: ${e.toString().replaceFirst("Exception: ", "")}');
+    }
+    _fbBusy = false;
+  }
 
   Future<void> playQueue(List<Song> songs, int start,
       {String source = '', Future<List<Song>> Function()? more}) async {
@@ -409,10 +465,8 @@ class PlayerService extends ChangeNotifier {
       await player.setAudioSource(_cs!, initialIndex: start);
       player.play();
     } catch (e) {
-      // play nahi hua; UI me spinner band ho jayega
-      messengerKey.currentState?.showSnackBar(SnackBar(
-          duration: const Duration(seconds: 6),
-          content: Text('Play error: ${e.toString().split("\n").first}')));
+      // direct stream nahi chala -> file download fallback
+      _fileFallback(e);
     }
   }
 

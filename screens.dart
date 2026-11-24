@@ -1020,8 +1020,8 @@ class VideoScreen extends StatefulWidget {
 }
 
 class _VideoScreenState extends State<VideoScreen> {
-  late final VideoPlayerController _c;
-  bool _error = false, _full = false;
+  late VideoPlayerController _c;
+  bool _error = false, _full = false, _dl = false;
   String _err = '';
 
   @override
@@ -1030,18 +1030,39 @@ class _VideoScreenState extends State<VideoScreen> {
     PlayerService.i.player.pause(); // audio band, video chalu
     _c = VideoPlayerController.networkUrl(Uri.parse(Api.videoUrl(widget.song)),
         httpHeaders: Api.playHeaders);
-    _c.addListener(() {
-      if (mounted) setState(() {});
-    });
-    _c.initialize().then((_) {
-      if (mounted) {
-        setState(() {});
-        _c.play();
+    _c.addListener(_tick);
+    _start();
+  }
+
+  void _tick() {
+    if (mounted) setState(() {});
+  }
+
+  // Pehle direct stream; fail ho to poori video download karke file se chalao
+  Future<void> _start() async {
+    try {
+      await _c.initialize();
+    } catch (_) {
+      try {
+        if (mounted) setState(() => _dl = true);
+        final f = await Api.download(Api.videoUrl(widget.song), 'v_${widget.song.id}.mp4');
+        if (!mounted) return;
+        final old = _c;
+        _c = VideoPlayerController.file(f);
+        _c.addListener(_tick);
+        old.removeListener(_tick);
+        old.dispose();
+        await _c.initialize();
+      } catch (e) {
+        _err = e.toString().replaceFirst('Exception: ', '').split('\n').first;
+        if (mounted) setState(() => _error = true);
+        return;
       }
-    }).catchError((e) {
-      _err = e.toString().split('\n').first;
-      if (mounted) setState(() => _error = true);
-    });
+    }
+    if (mounted) {
+      setState(() => _dl = false);
+      _c.play();
+    }
   }
 
   void _toggleFull() {
@@ -1080,7 +1101,14 @@ class _VideoScreenState extends State<VideoScreen> {
                 child: Text("Couldn't load the video\n$_err", textAlign: TextAlign.center),
               )
             : !v.isInitialized
-                ? const CircularProgressIndicator()
+                ? Column(mainAxisSize: MainAxisSize.min, children: [
+                    const CircularProgressIndicator(),
+                    if (_dl) const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('Video download ho rahi hai, thoda wait karo...',
+                          textAlign: TextAlign.center),
+                    ),
+                  ])
                 : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Flexible(
                       child: AspectRatio(aspectRatio: v.aspectRatio, child: VideoPlayer(_c)),
