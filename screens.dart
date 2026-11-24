@@ -1022,12 +1022,14 @@ class VideoScreen extends StatefulWidget {
 class _VideoScreenState extends State<VideoScreen> {
   late final VideoPlayerController _c;
   bool _error = false, _full = false;
+  String _err = '';
 
   @override
   void initState() {
     super.initState();
     PlayerService.i.player.pause(); // audio band, video chalu
-    _c = VideoPlayerController.networkUrl(Uri.parse(Api.videoUrl(widget.song)));
+    _c = VideoPlayerController.networkUrl(Uri.parse(Api.videoUrl(widget.song)),
+        httpHeaders: Api.playHeaders);
     _c.addListener(() {
       if (mounted) setState(() {});
     });
@@ -1036,7 +1038,8 @@ class _VideoScreenState extends State<VideoScreen> {
         setState(() {});
         _c.play();
       }
-    }).catchError((_) {
+    }).catchError((e) {
+      _err = e.toString().split('\n').first;
       if (mounted) setState(() => _error = true);
     });
   }
@@ -1072,9 +1075,9 @@ class _VideoScreenState extends State<VideoScreen> {
             ),
       body: Center(
         child: _error
-            ? const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text("Couldn't load the video", textAlign: TextAlign.center),
+            ? Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text("Couldn't load the video\n$_err", textAlign: TextAlign.center),
               )
             : !v.isInitialized
                 ? const CircularProgressIndicator()

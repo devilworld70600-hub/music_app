@@ -26,6 +26,7 @@ class MusicApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'Universal Music',
+        scaffoldMessengerKey: messengerKey,
         debugShowCheckedModeBanner: false,
         // phone ka bada font setting ho to bhi app ke text bade na dikhen
         builder: (context, child) => MediaQuery.withClampedTextScaling(

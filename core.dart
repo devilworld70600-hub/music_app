@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show GlobalKey, ScaffoldMessengerState, SnackBar, Text;
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -76,7 +77,17 @@ class Song {
 }
 
 // ---------- API ----------
+// error dikhane ke liye (main.dart me MaterialApp se juda hai)
+final messengerKey = GlobalKey<ScaffoldMessengerState>();
+
 class Api {
+  // audio/video player ko bhi browser jaisa UA do, warna server 403 de sakta hai
+  static const playHeaders = {
+    'User-Agent':
+        'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36',
+    'Accept': '*/*',
+  };
+
   static const _headers = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 13) UniversalMusic',
     'Accept': 'application/json',
@@ -340,6 +351,12 @@ class PlayerService extends ChangeNotifier {
     player.playerStateStream.listen((_) => notifyListeners());
     // network atka to gaana wahin se dobara try karo (2 baar tak)
     player.playbackEventStream.listen((_) => _retries = 0, onError: (Object e, StackTrace st) async {
+      debugPrint('PLAY ERROR: $e');
+      if (_retries >= 2) {
+        messengerKey.currentState?.showSnackBar(SnackBar(
+            duration: const Duration(seconds: 6),
+            content: Text('Play error: ${e.toString().split("\n").first}')));
+      }
       if (_retries >= 2 || _cs == null || index < 0) return;
       _retries++;
       try {
@@ -369,6 +386,7 @@ class PlayerService extends ChangeNotifier {
 
   AudioSource _src(Song s) => AudioSource.uri(
         Uri.parse(Api.audioUrl(s)),
+        headers: Api.playHeaders,
         tag: MediaItem(
           id: s.id,
           title: s.title,
@@ -390,8 +408,11 @@ class PlayerService extends ChangeNotifier {
       _cs = ConcatenatingAudioSource(children: queue.map(_src).toList());
       await player.setAudioSource(_cs!, initialIndex: start);
       player.play();
-    } catch (_) {
+    } catch (e) {
       // play nahi hua; UI me spinner band ho jayega
+      messengerKey.currentState?.showSnackBar(SnackBar(
+          duration: const Duration(seconds: 6),
+          content: Text('Play error: ${e.toString().split("\n").first}')));
     }
   }
 
